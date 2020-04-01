@@ -310,14 +310,19 @@ func (s *service) serve(ctx context.Context) {
 	// caching
 	restMux := noCacheMiddleware(metricsMiddleware(getPostHandler(getRestMux, postRestMux)))
 
-	// Wrap everything in basic auth, if user/password is set.
-	guiCfg := s.cfg.GUI()
-	if guiCfg.IsAuthEnabled() {
-		restMux = basicAuthAndSessionMiddleware("sessionid-"+s.id.String()[:5], guiCfg, s.cfg.LDAP(), restMux, s.evLogger)
-	}
-
 	// The main routing handler
 	mux := http.NewServeMux()
+
+	// Wrap everything in basic auth, if user/password is set.
+	guiCfg := s.cfg.GUI()
+	auth := authAndSessionMiddleware{"sessionid-" + s.id.String()[:5], guiCfg, s.cfg.LDAP(), s.evLogger}
+	if guiCfg.IsAuthEnabled() {
+		restMux = auth.handler(restMux)
+		mux.HandleFunc("/rest/login", auth.loginHandler)
+	} else {
+		mux.HandleFunc("/rest/login", auth.noopHandler)
+	}
+
 	mux.Handle("/rest/", restMux)
 	mux.HandleFunc("/qr/", s.getQR)
 

@@ -14,6 +14,22 @@ angular.module('syncthing.core')
 
         function initController() {
             LocaleService.autoConfigLocale();
+            checkLoginAndStart();
+        }
+
+        function checkLoginAndStart() {
+            $http.get(urlbase + '/login').success(function () {
+                // We are logged in, or don't need to log in
+                loginSuccessful();
+            }).error(function () {
+                // We must log in. Show the login prompt. Then try to log in:
+                $http.post(urlbase + '/login?username=foo&password=bar').success(loginSuccessful).error(function () {
+                    // Show the login prompt again.
+                })
+            });
+        }
+
+        function loginSuccessful(){
             setInterval($scope.refresh, 10000);
             Events.start();
         }
