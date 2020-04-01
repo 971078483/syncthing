@@ -72,6 +72,14 @@ func (m *csrfManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.next.ServeHTTP(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/rest/login") {
+		// XXX: Because we send the /rest/login request directly from the
+		// browser there is no CSRF token header. Probably we should make
+		// the request using javascript instead and actually have a token as
+		// usual...
+		m.next.ServeHTTP(w, r)
+		return
+	}
 
 	// Allow requests for anything not under the protected path prefix,
 	// and set a CSRF cookie if there isn't already a valid one.

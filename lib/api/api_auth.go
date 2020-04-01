@@ -43,6 +43,16 @@ func basicAuthAndSessionMiddleware(cookieName string, guiCfg config.GUIConfigura
 			return
 		}
 
+		if r.URL.Path == "/login.html" {
+			// Special case, we allow access to /login.html without any
+			// authentication. XXX: What about bootstrap, style sheets,
+			// translations, etc? We might need to reorganize things to
+			// allow access to those as well under /noauth/ or something
+			// like that...
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		cookie, err := r.Cookie(cookieName)
 		if err == nil && cookie != nil {
 			sessionsMut.Lock()
@@ -54,35 +64,21 @@ func basicAuthAndSessionMiddleware(cookieName string, guiCfg config.GUIConfigura
 			}
 		}
 
-		l.Debugln("Sessionless HTTP request with authentication; this is expensive.")
-
 		error := func() {
+			// Authentication failed. Add a small random delay and redirect
+			// to the login page.
 			time.Sleep(time.Duration(rand.Intn(100)+100) * time.Millisecond)
-			w.Header().Set("WWW-Authenticate", "Basic realm=\"Authorization Required\"")
-			http.Error(w, "Not Authorized", http.StatusUnauthorized)
+			w.Header().Set("Location", "/login.html")
+			w.WriteHeader(http.StatusTemporaryRedirect)
 		}
 
-		hdr := r.Header.Get("Authorization")
-		if !strings.HasPrefix(hdr, "Basic ") {
+		username, password, ok := requestCredentials(r)
+		if !ok {
 			error()
 			return
 		}
 
-		hdr = hdr[6:]
-		bs, err := base64.StdEncoding.DecodeString(hdr)
-		if err != nil {
-			error()
-			return
-		}
-
-		fields := bytes.SplitN(bs, []byte(":"), 2)
-		if len(fields) != 2 {
-			error()
-			return
-		}
-
-		username := string(fields[0])
-		password := string(fields[1])
+		l.Debugln("Sessionless HTTP request with authentication; this is expensive.")
 
 		authOk := auth(username, password, guiCfg, ldapCfg)
 		if !authOk {
@@ -105,14 +101,60 @@ func basicAuthAndSessionMiddleware(cookieName string, guiCfg config.GUIConfigura
 		sessions[sessionid] = true
 		sessionsMut.Unlock()
 		http.SetCookie(w, &http.Cookie{
-			Name:   cookieName,
-			Value:  sessionid,
-			MaxAge: 0,
+			Name:     cookieName,
+			Value:    sessionid,
+			MaxAge:   86400,
+			Path:     "/",
+			SameSite: http.SameSiteStrictMode,
 		})
 
 		emitLoginAttempt(true, username, evLogger)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requestCredentials returns the credentials found in the request, if any.
+func requestCredentials(req *http.Request) (username, password string, ok bool) {
+	username, password, ok = requestCredentialsBasicAuth(req)
+	if !ok {
+		username, password, ok = requestCredentialsLogin(req)
+	}
+	return
+}
+
+// requestCredentials returns the credentials from basic authentication
+func requestCredentialsBasicAuth(req *http.Request) (username, password string, ok bool) {
+	hdr := req.Header.Get("Authorization")
+	if !strings.HasPrefix(hdr, "Basic ") {
+		return "", "", false
+	}
+
+	hdr = hdr[6:]
+	bs, err := base64.StdEncoding.DecodeString(hdr)
+	if err != nil {
+		return "", "", false
+	}
+
+	fields := bytes.SplitN(bs, []byte(":"), 2)
+	if len(fields) != 2 {
+		return "", "", false
+	}
+
+	username = string(fields[0])
+	password = string(fields[1])
+	ok = true
+	return
+}
+
+// requestCredentials returns the credentials in a /rest/login request
+func requestCredentialsLogin(req *http.Request) (username, password string, ok bool) {
+	if req.URL.Path != "/rest/login" || req.Method != http.MethodPost {
+		return "", "", false
+	}
+
+	username = req.FormValue("username")
+	password = req.FormValue("password")
+	return username, password, username != ""
 }
 
 func auth(username string, password string, guiCfg config.GUIConfiguration, ldapCfg config.LDAPConfiguration) bool {

@@ -279,6 +279,7 @@ func (s *service) serve(ctx context.Context) {
 
 	// The POST handlers
 	postRestMux := http.NewServeMux()
+	postRestMux.HandleFunc("/rest/login", s.restLogin)                             // username, password
 	postRestMux.HandleFunc("/rest/db/prio", s.postDBPrio)                          // folder file [perpage] [page]
 	postRestMux.HandleFunc("/rest/db/ignores", s.postDBIgnores)                    // folder
 	postRestMux.HandleFunc("/rest/db/override", s.postDBOverride)                  // folder
@@ -596,6 +597,14 @@ func (s *service) whenDebugging(h http.Handler) http.Handler {
 
 		http.Error(w, "Debugging disabled", http.StatusForbidden)
 	})
+}
+
+func (s *service) restLogin(w http.ResponseWriter, r *http.Request) {
+	// Handled internally by the auth middleware, if we reached this point
+	// the login was successful. We redirect to the main GUI.
+	w.Header().Set("Location", "/")
+	w.WriteHeader(http.StatusTemporaryRedirect)
+	fmt.Fprintf(w, "Logged in, redirecting...\n")
 }
 
 func (s *service) restPing(w http.ResponseWriter, r *http.Request) {
