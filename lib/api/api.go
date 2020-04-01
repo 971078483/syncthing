@@ -310,6 +310,12 @@ func (s *service) serve(ctx context.Context) {
 	// caching
 	restMux := noCacheMiddleware(metricsMiddleware(getPostHandler(getRestMux, postRestMux)))
 
+	// Wrap everything in basic auth, if user/password is set.
+	guiCfg := s.cfg.GUI()
+	if guiCfg.IsAuthEnabled() {
+		restMux = basicAuthAndSessionMiddleware("sessionid-"+s.id.String()[:5], guiCfg, s.cfg.LDAP(), restMux, s.evLogger)
+	}
+
 	// The main routing handler
 	mux := http.NewServeMux()
 	mux.Handle("/rest/", restMux)
@@ -321,19 +327,12 @@ func (s *service) serve(ctx context.Context) {
 	// Handle the special meta.js path
 	mux.HandleFunc("/meta.js", s.getJSMetadata)
 
-	guiCfg := s.cfg.GUI()
-
 	// Wrap everything in CSRF protection. The /rest prefix should be
 	// protected, other requests will grant cookies.
 	var handler http.Handler = newCsrfManager(s.id.String()[:5], "/rest", guiCfg, mux, locations.Get(locations.CsrfTokens))
 
 	// Add our version and ID as a header to responses
 	handler = withDetailsMiddleware(s.id, handler)
-
-	// Wrap everything in basic auth, if user/password is set.
-	if guiCfg.IsAuthEnabled() {
-		handler = basicAuthAndSessionMiddleware("sessionid-"+s.id.String()[:5], guiCfg, s.cfg.LDAP(), handler, s.evLogger)
-	}
 
 	// Redirect to HTTPS if we are supposed to
 	if guiCfg.UseTLS() {
