@@ -115,6 +115,17 @@ func basicAuthAndSessionMiddleware(cookieName string, guiCfg config.GUIConfigura
 	})
 }
 
+func logoutHandler(cookieName string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(cookieName)
+		if err == nil && cookie != nil {
+			sessionsMut.Lock()
+			delete(sessions, cookie.Value)
+			sessionsMut.Unlock()
+		}
+	})
+}
+
 func auth(username string, password string, guiCfg config.GUIConfiguration, ldapCfg config.LDAPConfiguration) bool {
 	if guiCfg.AuthMode == config.AuthModeLDAP {
 		return authLDAP(username, password, ldapCfg)

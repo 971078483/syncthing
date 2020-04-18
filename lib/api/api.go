@@ -332,7 +332,9 @@ func (s *service) serve(ctx context.Context) {
 
 	// Wrap everything in basic auth, if user/password is set.
 	if guiCfg.IsAuthEnabled() {
-		handler = basicAuthAndSessionMiddleware("sessionid-"+s.id.String()[:5], guiCfg, s.cfg.LDAP(), handler, s.evLogger)
+		cookieName := "sessionid-" + s.id.String()[:5]
+		mux.Handle("/rest/system/logout", logoutHandler(cookieName))
+		handler = basicAuthAndSessionMiddleware(cookieName, guiCfg, s.cfg.LDAP(), handler, s.evLogger)
 	}
 
 	// Redirect to HTTPS if we are supposed to
