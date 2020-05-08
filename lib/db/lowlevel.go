@@ -829,10 +829,17 @@ func (db *Lowlevel) repairSequenceGCLocked(folderStr string, meta *metadataTrack
 			if !backend.IsNotFound(err) {
 				return 0, err
 			}
+			l.Infof("missing sequence entry for %q", fi.Name)
 			fallthrough
 		case !bytes.Equal(it.Key(), dk):
+			if dk != nil {
+				seq := t.keyer.SequenceFromSequenceKey(sk)
+				name := t.keyer.NameFromDeviceFileKey(dk)
+				l.Infof("sequence key %d incorrectly referred to %q", seq, name)
+			}
 			fixed++
 			fi.Sequence = meta.nextLocalSeq()
+			l.Infof("rewrite sequence entry for %q (new seq %d)", fi.Name, fi.Sequence)
 			if sk, err = t.keyer.GenerateSequenceKey(sk, folder, fi.Sequence); err != nil {
 				return 0, err
 			}
@@ -876,10 +883,15 @@ func (db *Lowlevel) repairSequenceGCLocked(folderStr string, meta *metadataTrack
 			return 0, err
 		}
 		if ok {
-			if seq := t.keyer.SequenceFromSequenceKey(it.Key()); seq == fi.SequenceNo() {
+			seq := t.keyer.SequenceFromSequenceKey(it.Key())
+			if seq == fi.SequenceNo() {
 				continue
 			}
+			l.Infof("dropping incorrect sequence entry %q with wrong sequence (%d != %d)", fi.FileName(), seq, fi.SequenceNo())
+		} else {
+			l.Infoln("dropping incorrect sequence entry with missing target")
 		}
+
 		// Either the file is missing or has a different sequence number
 		fixed++
 		if err := t.Delete(it.Key()); err != nil {
